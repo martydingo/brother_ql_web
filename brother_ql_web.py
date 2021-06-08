@@ -70,6 +70,9 @@ def get_label_context(request):
       'margin_bottom': float(d.get('margin_bottom', 45))/100.,
       'margin_left':   float(d.get('margin_left',   35))/100.,
       'margin_right':  float(d.get('margin_right',  35))/100.,
+      'grocycode': d.get('grocycode', None),
+      'product': d.get('product', None),
+      'duedate': d.get('duedate', None)
     }
     context['margin_top']    = int(context['font_size']*context['margin_top'])
     context['margin_bottom'] = int(context['font_size']*context['margin_bottom'])
@@ -145,6 +148,63 @@ def create_label_im(text, **kwargs):
     draw.multiline_text(offset, text, kwargs['fill_color'], font=im_font, align=kwargs['align'])
     return im
 
+def create_label_grocy(text, **kwargs):
+    product = kwargs['product']
+    duedate = kwargs['duedate']
+    grocycode = kwargs['grocycode']
+
+
+    # prepare grocycode datamatrix
+    from pylibdmtx.pylibdmtx import encode
+    encoded = encode(grocycode.encode('utf8'), size="SquareAuto") # adjusted for 300x300 dpi - results in DM code roughly 5x5mm
+    datamatrix = Image.frombytes('RGB', (encoded.width, encoded.height), encoded.pixels)
+    datamatrix.save('/tmp/dmtx.png')
+
+    product_font = ImageFont.truetype(kwargs['font_path'], 100)
+    duedate_font = ImageFont.truetype(kwargs['font_path'], 60)
+    width = kwargs['width']
+    height = 200
+    if kwargs['orientation'] == 'rotated':
+        tw = width
+        width = height
+        height = tw
+
+    im = Image.new('RGB', (width, height), 'white')
+    draw = ImageDraw.Draw(im)
+    if kwargs['orientation'] == 'standard':
+        vertical_offset = kwargs['margin_top']
+        horizontal_offset = kwargs['margin_left']
+    elif kwargs['orientation'] == 'rotated':
+        vertical_offset = kwargs['margin_top']
+        horizontal_offset = kwargs['margin_left']
+        datamatrix.transpose(Image.ROTATE_270)
+
+    im.paste(datamatrix, (horizontal_offset, vertical_offset, horizontal_offset + encoded.width, vertical_offset + encoded.height))
+
+    if kwargs['orientation'] == 'standard':
+        vertical_offset += -10
+        horizontal_offset = encoded.width + 40
+    elif kwargs['orientation'] == 'rotated':
+        vertical_offset += encoded.width + 40
+        horizontal_offset += -10
+
+    textoffset = horizontal_offset, vertical_offset
+
+    draw.text(textoffset, product, kwargs['fill_color'], font=product_font)
+
+    if duedate is not None:
+        if kwargs['orientation'] == 'standard':
+            vertical_offset += 110
+            horizontal_offset = kwargs['margin_left']
+        elif kwargs['orientation'] == 'rotated':
+            vertical_offset = kwargs['margin_left']
+            horizontal_offset += 110
+        textoffset = horizontal_offset, vertical_offset
+
+        draw.text(textoffset, duedate, kwargs['fill_color'], font=duedate_font)
+
+    return im
+
 @get('/api/preview/text')
 @post('/api/preview/text')
 def get_preview_image():
@@ -164,6 +224,56 @@ def image_to_png_bytes(im):
     im.save(image_buffer, format="PNG")
     image_buffer.seek(0)
     return image_buffer.read()
+
+@post('/api/print/grocy')
+@get('/api/print/grocy')
+def print_grocy():
+    """
+    API endpoint to consume the grocy label webhook.
+
+    returns; JSON
+    """
+
+    return_dict = {'success' : False }
+
+    try:
+        context = get_label_context(request)
+    except LookupError as e:
+        return_dict['error'] = e.msg
+        return return_dict
+
+    if context['product'] is None:
+        return_dict['error'] = 'Please provide the product for the label'
+        return return_dict
+
+    im = create_label_grocy(**context)
+    if DEBUG: im.save('sample-out.png')
+
+    if context['kind'] == ENDLESS_LABEL:
+        rotate = 0 if context['orientation'] == 'standard' else 90
+    elif context['kind'] in (ROUND_DIE_CUT_LABEL, DIE_CUT_LABEL):
+        rotate = 'auto'
+
+    qlr = BrotherQLRaster(CONFIG['PRINTER']['MODEL'])
+    red = False
+    if 'red' in context['label_size']:
+        red = True
+    create_label(qlr, im, context['label_size'], red=red, threshold=context['threshold'], cut=True, rotate=rotate)
+
+    if not DEBUG:
+        try:
+            be = BACKEND_CLASS(CONFIG['PRINTER']['PRINTER'])
+            be.write(qlr.data)
+            be.dispose()
+            del be
+        except Exception as e:
+            return_dict['message'] = str(e)
+            logger.warning('Exception happened: %s', e)
+            return return_dict
+
+    return_dict['success'] = True
+    if DEBUG: return_dict['data'] = str(qlr.data)
+    return return_dict
 
 @post('/api/print/text')
 @get('/api/print/text')
