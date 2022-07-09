@@ -72,7 +72,7 @@ def get_label_context(request):
       'margin_right':  float(d.get('margin_right',  35))/100.,
       'grocycode': d.get('grocycode', None),
       'product': d.get('product', None),
-      'duedate': d.get('duedate', None)
+      'due_date': d.get('due_date', None)
     }
     context['margin_top']    = int(context['font_size']*context['margin_top'])
     context['margin_bottom'] = int(context['font_size']*context['margin_bottom'])
@@ -80,6 +80,7 @@ def get_label_context(request):
     context['margin_right']  = int(context['font_size']*context['margin_right'])
 
     context['fill_color']  = (255, 0, 0) if 'red' in context['label_size'] else (0, 0, 0)
+    print(str(context))
 
     def get_font_path(font_family_name, font_style_name):
         try:
@@ -150,7 +151,7 @@ def create_label_im(text, **kwargs):
 
 def create_label_grocy(text, **kwargs):
     product = kwargs['product']
-    duedate = kwargs['duedate']
+    due_date = kwargs['due_date']
     grocycode = kwargs['grocycode']
 
 
@@ -161,7 +162,7 @@ def create_label_grocy(text, **kwargs):
     datamatrix.save('/tmp/dmtx.png')
 
     product_font = ImageFont.truetype(kwargs['font_path'], 100)
-    duedate_font = ImageFont.truetype(kwargs['font_path'], 60)
+    due_date_font = ImageFont.truetype(kwargs['font_path'], 60)
     width = kwargs['width']
     height = 200
     if kwargs['orientation'] == 'rotated':
@@ -170,6 +171,7 @@ def create_label_grocy(text, **kwargs):
         height = tw
 
     im = Image.new('RGB', (width, height), 'white')
+    print(str(im.size))   
     draw = ImageDraw.Draw(im)
     if kwargs['orientation'] == 'standard':
         vertical_offset = kwargs['margin_top']
@@ -192,7 +194,7 @@ def create_label_grocy(text, **kwargs):
 
     draw.text(textoffset, product, kwargs['fill_color'], font=product_font)
 
-    if duedate is not None:
+    if due_date is not None:
         if kwargs['orientation'] == 'standard':
             vertical_offset += 110
             horizontal_offset = kwargs['margin_left']
@@ -201,7 +203,7 @@ def create_label_grocy(text, **kwargs):
             horizontal_offset += 110
         textoffset = horizontal_offset, vertical_offset
 
-        draw.text(textoffset, duedate, kwargs['fill_color'], font=duedate_font)
+        draw.text(textoffset, due_date, kwargs['fill_color'], font=due_date_font)
 
     return im
 
@@ -288,7 +290,8 @@ def print_text():
     """
 
     return_dict = {'success': False}
-
+    print(str(request.__dir__()))
+    print(str(request.POST.dict))
     try:
         context = get_label_context(request)
     except LookupError as e:
