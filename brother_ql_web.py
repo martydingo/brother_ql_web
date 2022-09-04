@@ -39,7 +39,7 @@ def serve_static(filename):
     return static_file(filename, root='./static')
 
 @route('/labeldesigner')
-@view('/views/labeldesigner.jinja2')
+@view('./views/labeldesigner.jinja2')
 def labeldesigner():
     font_family_names = sorted(list(FONTS.keys()))
     return {'font_family_names': font_family_names,
